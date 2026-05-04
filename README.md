@@ -15,6 +15,20 @@ The system helps reduce manual effort while keeping test scenarios comprehensive
 
 ---
 
+## 🤖 Live Telegram Bot
+
+You can interact with the AI QA Agent directly via Telegram:
+
+👉 Bot Username: @Alda_QA_Agent_Bot  
+👉 Direct Link: https://t.me/Alda_QA_Agent_Bot  
+
+### Command Example:
+```bash
+/generate Login page must validate email and password
+````
+
+---
+
 ## ⚙️ Tech Stack
 
 - Python (Flask)
