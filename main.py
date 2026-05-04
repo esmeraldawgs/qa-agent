@@ -1,6 +1,7 @@
 import requests
 from flask import Flask, request
 import os
+from time import time
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
@@ -8,7 +9,25 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 app = Flask(__name__)
 
 # =========================
-# AI CALL (ROBUST)
+# ANTI SPAM / DEDUP STORAGE
+# =========================
+processed_updates = set()
+user_last_call = {}
+
+# =========================
+# RATE LIMIT
+# =========================
+def is_rate_limited(user_id):
+    now = time()
+    if user_id in user_last_call:
+        if now - user_last_call[user_id] < 10:
+            return True
+    user_last_call[user_id] = now
+    return False
+
+
+# =========================
+# AI CALL
 # =========================
 def call_ai(prompt):
     try:
@@ -28,7 +47,7 @@ def call_ai(prompt):
         data = response.json()
 
         if "choices" not in data:
-            return f"ERROR AI RESPONSE:\n{data}"
+            return f"ERROR AI:\n{data}"
 
         return data["choices"][0]["message"]["content"]
 
@@ -36,9 +55,6 @@ def call_ai(prompt):
         return f"EXCEPTION AI:\n{str(e)}"
 
 
-# =========================
-# QA LOGIC
-# =========================
 def generate(prd):
     return call_ai(f"""
 You are a QA engineer.
@@ -56,13 +72,12 @@ Review and improve this test cases:
 
 
 # =========================
-# TELEGRAM SENDER (FIXED)
+# TELEGRAM SEND
 # =========================
 def send_telegram(chat_id, text):
     try:
         text = str(text)
 
-        # avoid Telegram limit crash
         if len(text) > 3500:
             text = text[:3500] + "\n\n... (trimmed)"
 
@@ -89,33 +104,46 @@ def webhook():
     data = request.json
     print("INCOMING:", data)
 
+    update_id = data.get("update_id")
+    if update_id in processed_updates:
+        return "ignored"
+    processed_updates.add(update_id)
+
     message = data.get("message", {})
     chat_id = message.get("chat", {}).get("id")
     text = message.get("text", "")
+    user_id = message.get("from", {}).get("id")
 
-    print("CHAT ID:", chat_id)
+    print("CHAT_ID:", chat_id)
     print("TEXT:", text)
 
     if not chat_id:
         return "no chat id"
 
-    try:
-        if text.startswith("/generate"):
-            prd = text.replace("/generate", "").strip()
+    if not text.startswith("/generate"):
+        return "ok"
 
-            send_telegram(chat_id, "Generating...")
+    if is_rate_limited(user_id):
+        send_telegram(chat_id, "Tunggu dulu ya bestie 😏 (rate limited)")
+        return "ok"
 
-            tc = generate(prd)
-            print("TC:", tc)
+    prd = text.replace("/generate", "").strip()
 
-            reviewed = review(tc)
-            print("REVIEW:", reviewed)
+    send_telegram(chat_id, "Generating...")
 
-            send_telegram(chat_id, reviewed)
+    # run heavy work async (avoid Telegram timeout/resend)
+    import threading
 
-    except Exception as e:
-        print("ERROR:", str(e))
-        send_telegram(chat_id, f"ERROR: {str(e)}")
+    def worker():
+        tc = generate(prd)
+        print("TC:", tc)
+
+        reviewed = review(tc)
+        print("REVIEW:", reviewed)
+
+        send_telegram(chat_id, reviewed)
+
+    threading.Thread(target=worker).start()
 
     return "ok"
 
@@ -129,7 +157,7 @@ def home():
 
 
 # =========================
-# RAILWAY ENTRY POINT
+# START
 # =========================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
