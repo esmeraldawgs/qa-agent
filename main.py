@@ -64,7 +64,30 @@ def webhook():
 def home():
     return "Bot is running"
 
-# 🔥 INI YANG PENTING BUAT RAILWAY
+def call_ai(prompt):
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "deepseek/deepseek-chat",
+                "messages": [{"role": "user", "content": prompt}]
+            }
+        )
+
+        data = response.json()
+
+        if "choices" not in data:
+            return f"ERROR AI:\n{data}"
+
+        return data["choices"][0]["message"]["content"]
+
+    except Exception as e:
+        return f"EXCEPTION:\n{str(e)}"
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
