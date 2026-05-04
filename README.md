@@ -29,15 +29,7 @@ The system helps reduce manual effort while keeping test scenarios comprehensive
 
 ```
 
-User (PRD)
-↓
-Generator Agent
-↓
-Reviewer Agent
-↓
-Final Test Scenarios
-↓
-Returned via Telegram
+User (PRD) → Generator Agent → Reviewer Agent → Final Test Scenarios → Returned via Telegram
 
 ````
 
@@ -135,5 +127,3 @@ This project demonstrates how AI can assist QA engineers by:
 ## 👩‍💻 Author
 
 Esmeralda Wangsa
-
----
