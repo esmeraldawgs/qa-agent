@@ -8,7 +8,7 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 app = Flask(__name__)
 
 # =========================
-# AI CALL (SAFE VERSION)
+# AI CALL (ROBUST)
 # =========================
 def call_ai(prompt):
     try:
@@ -33,7 +33,7 @@ def call_ai(prompt):
         return data["choices"][0]["message"]["content"]
 
     except Exception as e:
-        return f"EXCEPTION:\n{str(e)}"
+        return f"EXCEPTION AI:\n{str(e)}"
 
 
 # =========================
@@ -56,11 +56,17 @@ Review and improve this test cases:
 
 
 # =========================
-# TELEGRAM SENDER
+# TELEGRAM SENDER (FIXED)
 # =========================
 def send_telegram(chat_id, text):
     try:
-        requests.post(
+        text = str(text)
+
+        # avoid Telegram limit crash
+        if len(text) > 3500:
+            text = text[:3500] + "\n\n... (trimmed)"
+
+        r = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
             json={
                 "chat_id": chat_id,
@@ -68,8 +74,11 @@ def send_telegram(chat_id, text):
             },
             timeout=20
         )
+
+        print("TELEGRAM RESPONSE:", r.text)
+
     except Exception as e:
-        print("Telegram send error:", e)
+        print("TELEGRAM ERROR:", str(e))
 
 
 # =========================
@@ -83,6 +92,9 @@ def webhook():
     message = data.get("message", {})
     chat_id = message.get("chat", {}).get("id")
     text = message.get("text", "")
+
+    print("CHAT ID:", chat_id)
+    print("TEXT:", text)
 
     if not chat_id:
         return "no chat id"
@@ -102,7 +114,7 @@ def webhook():
             send_telegram(chat_id, reviewed)
 
     except Exception as e:
-        print("ERROR:", e)
+        print("ERROR:", str(e))
         send_telegram(chat_id, f"ERROR: {str(e)}")
 
     return "ok"
