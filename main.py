@@ -2,6 +2,7 @@ import os
 import requests
 from flask import Flask, request
 from time import time
+import threading
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
@@ -9,15 +10,11 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 app = Flask(__name__)
 
 # =========================
-# SIMPLE DEDUP (IN-MEMORY)
-# NOTE: not persistent across restart (Railway limitation)
+# DEDUP + RATE LIMIT
 # =========================
 processed_messages = set()
 user_last_call = {}
 
-# =========================
-# RATE LIMIT (10 sec)
-# =========================
 def is_rate_limited(user_id):
     now = time()
     last = user_last_call.get(user_id, 0)
@@ -28,9 +25,9 @@ def is_rate_limited(user_id):
 
 
 # =========================
-# AI CALL (SAFE)
+# AI CALL (IMPROVED DEBUG)
 # =========================
-def call_ai(prompt):
+def call_ai(prompt, label="AI"):
     try:
         r = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -46,14 +43,16 @@ def call_ai(prompt):
         )
 
         data = r.json()
+        print(f"[{label}] RAW RESPONSE:", data)
 
         if "choices" not in data:
-            return f"AI ERROR: {data}"
+            return f"AI ERROR ({label}): {data}"
 
         return data["choices"][0]["message"]["content"]
 
     except Exception as e:
-        return f"AI EXCEPTION: {str(e)}"
+        print(f"[{label}] EXCEPTION:", str(e))
+        return f"AI EXCEPTION ({label}): {str(e)}"
 
 
 def generate(prd):
@@ -62,7 +61,7 @@ You are a QA engineer.
 Generate clean test scenarios from this PRD:
 
 {prd}
-""")
+""", "GENERATE")
 
 
 def review(tc):
@@ -71,12 +70,13 @@ You are a strict QA reviewer.
 Improve and validate these test cases:
 
 {tc}
-Return final cleaned version only.
-""")
+
+Return ONLY final cleaned version.
+""", "REVIEW")
 
 
 # =========================
-# TELEGRAM SEND (SAFE + LOG)
+# TELEGRAM SEND
 # =========================
 def send_telegram(chat_id, text):
     try:
@@ -94,10 +94,10 @@ def send_telegram(chat_id, text):
             timeout=20
         )
 
-        print("TELEGRAM RESPONSE:", r.text)
+        print("[TELEGRAM] RESPONSE:", r.text)
 
     except Exception as e:
-        print("TELEGRAM SEND ERROR:", str(e))
+        print("[TELEGRAM ERROR]:", str(e))
 
 
 # =========================
@@ -117,9 +117,6 @@ def webhook():
     if not chat_id or not message_id:
         return "no data"
 
-    # =========================
-    # STRICT DEDUP (ONLY ONCE EXECUTION)
-    # =========================
     unique_key = f"{chat_id}:{message_id}"
 
     if unique_key in processed_messages:
@@ -127,17 +124,11 @@ def webhook():
 
     processed_messages.add(unique_key)
 
-    # =========================
-    # ONLY HANDLE COMMAND
-    # =========================
     if not text.startswith("/generate"):
         return "ok"
 
-    # =========================
-    # RATE LIMIT (NO SPAM MESSAGE LOOP)
-    # =========================
     if is_rate_limited(user_id):
-        print("RATE LIMITED:", user_id)
+        send_telegram(chat_id, "Tunggu 10 detik ya bestie 😏")
         return "ok"
 
     prd = text.replace("/generate", "").strip()
@@ -145,14 +136,24 @@ def webhook():
     send_telegram(chat_id, "Generating QA scenarios...")
 
     # =========================
-    # BACKGROUND EXECUTION (NO BLOCK / NO RETRY LOOP)
+    # SAFE THREAD EXECUTION
     # =========================
-    import threading
-
     def worker():
-        tc = generate(prd)
-        reviewed = review(tc)
-        send_telegram(chat_id, reviewed)
+        try:
+            print("[WORKER] GENERATE START")
+            tc = generate(prd)
+            print("[WORKER] GENERATE DONE")
+
+            print("[WORKER] REVIEW START")
+            reviewed = review(tc)
+            print("[WORKER] REVIEW DONE")
+
+            send_telegram(chat_id, reviewed)
+            print("[WORKER] SENT DONE")
+
+        except Exception as e:
+            print("[WORKER ERROR]:", str(e))
+            send_telegram(chat_id, f"WORKER ERROR: {str(e)}")
 
     threading.Thread(target=worker, daemon=True).start()
 
