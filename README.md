@@ -1,4 +1,3 @@
-```markdown
 # 🚀 AI QA Test Scenario Generator
 
 AI-powered QA assistant that generates and reviews test scenarios from PRD using a multi-agent approach (Generator + Reviewer).
@@ -27,11 +26,7 @@ The system helps reduce manual effort while keeping test scenarios comprehensive
 
 ## 🔁 Workflow
 
-```
-
 User (PRD) → Generator Agent → Reviewer Agent → Final Test Scenarios → Returned via Telegram
-
-````
 
 ---
 
